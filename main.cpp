@@ -12,7 +12,7 @@ const string path = "C:\\Users\\q041\\OneDrive\\Desktop\\Screenshot.png";
 const string pathToVid = "C:\\Users\\q041\\OneDrive\\Desktop\\ippr-vid.mp4";
 
 Mat KMeans(Mat original, int clusters);
-vector<Mat> segment(Mat src, Mat ori);
+vector<Mat> applySegmentation(Mat processed, Mat original);
 
 int main()
 {
@@ -38,7 +38,7 @@ int main()
 	imshow("Thresh", image_grayscale);
 	*/
 
-	kMeans = KMeans(salient, 5);
+	kMeans = KMeans(salient, 3);
 
 	imshow("KMeans", kMeans);
 	fastNlMeansDenoising(kMeans, denoised, 35, 7, 21);
@@ -50,7 +50,7 @@ int main()
 
 	imshow("Denoised", denoised);
 
-	segment(denoised, original);
+	applySegmentation(denoised, original);
 
 	waitKey(0);
 	return 0;
@@ -110,39 +110,31 @@ Mat KMeans(Mat original, int clusters) {
 
 
 
-
-
-vector<Mat> segment(Mat src, Mat ori) {
-	vector<std::vector<Point>> contours;
+vector<Mat> applySegmentation(Mat processed, Mat original) {
+	vector<vector<Point>> contours;
 	vector<Vec4i> hierarchy;
-	vector<Mat> croppedImg; /*declare the croppedimg vector to store all the croppedimg*/
-	/*get the threshold*/
-	threshold(src, src, 0, 255, THRESH_BINARY | THRESH_OTSU);
-	/*get the erosion*/
-	int erosion_size = 5;
-	erode(src, src, getStructuringElement(MORPH_RECT, Size(
-		erosion_size * 2 + 1, 1), Point(erosion_size, 0)));
-	//imshow("erosion", src);
-	/*get the dilation*/
-	int dilation_size = 10;
-	dilate(src, src, getStructuringElement(MORPH_RECT, Size(1,
-		dilation_size * 2 + 1), Point(0, dilation_size)));
-	//imshow("dilation", src);
-
-	findContours(src, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
-	Mat drawing = Mat::zeros(src.size(), CV_8UC3);
-	// Original image clone
+	vector<Mat> separateImages;
+	threshold(processed, processed, 0, 255, THRESH_BINARY | THRESH_OTSU);
+	int erosion = 5;
+	erode(processed, processed, getStructuringElement(MORPH_RECT, Size(erosion*2+1, 1), Point(erosion, 0)));
+	int dilation = 10;
+	dilate(processed, processed, getStructuringElement(MORPH_RECT, Size(1, dilation * 2 + 1), Point(0, dilation)));
+	findContours(processed, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
+	Mat drawing = Mat::zeros(processed.size(), CV_8UC3);
 	RNG rng(12345);
 	for (size_t i = 0; i < contours.size(); i++) {
-		Scalar color = Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256));
-		Rect r = boundingRect(contours.at(i));
-		double ratio = r.width / r.height;
-		if (r.width < ori.cols * 0.05 || r.height < ori.rows * 0.1 ||
-			r.y < ori.rows * 0.25 || (r.x < ori.cols * 0.3) || ratio > 3.0) {
+		Scalar scalar = Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256));
+		Rect rect = boundingRect(contours.at(i));
+		double wh = rect.width / rect.height;
+		imshow(to_string(i), original(rect));
+		if (rect.width < original.cols * 0.05
+			|| rect.height < original.rows * 0.1
+			|| rect.y < original.rows * 0.25
+			|| rect.x < original.cols * 0.3
+			|| wh > 3.0) {
 			continue;
 		}
-		croppedImg.push_back(ori(r));
-		imshow(to_string(i), ori(r));
+		separateImages.push_back(original(rect));
 	}
-	return croppedImg;
+	return separateImages;
 }
