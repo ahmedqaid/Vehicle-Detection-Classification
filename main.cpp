@@ -50,7 +50,7 @@ int main()
 
 	imshow("Denoised", denoised);
 
-	//segment(salient, original);
+	segment(denoised, original);
 
 	waitKey(0);
 	return 0;
@@ -142,6 +142,7 @@ vector<Mat> segment(Mat src, Mat ori) {
 			continue;
 		}
 		croppedImg.push_back(ori(r));
+		imshow(to_string(i), ori(r));
 	}
 	return croppedImg;
 }
