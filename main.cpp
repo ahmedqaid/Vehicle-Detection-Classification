@@ -9,6 +9,11 @@
 #include "opencv2/dnn/dnn.hpp"
 #include <string>
 #include <fstream>
+#include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
+#include "opencv2/bgsegm.hpp"
+#include <opencv2/saliency/saliencySpecializedClasses.hpp>
+#include <core\types_c.h>
 
 using namespace std;
 using namespace cv;
@@ -18,10 +23,11 @@ using namespace cv;
 using namespace dnn;
 
 const string path = "C:\\Users\\q041\\OneDrive\\Desktop\\Screenshot.png";
-const string pathToVid = "C:\\Users\\q041\\OneDrive\\Desktop\\ippr-vid2.mp4";
+const string pathToVid = "C:\\Users\\q041\\OneDrive\\Desktop\\ippr-vid1.mp4";
 
 Mat KMeans(Mat original, int clusters);
 vector<Mat> applySegmentation(Mat processed, Mat original);
+void classify(Mat object);
 
 int main()
 {
@@ -41,61 +47,109 @@ int main()
 
 	int frame_width = cap.get(CAP_PROP_FRAME_WIDTH);
 	int frame_height = cap.get(CAP_PROP_FRAME_HEIGHT);
-	VideoWriter video("C:\\Users\\q041\\OneDrive\\Desktop\\ippr-vids.mp4", VideoWriter::fourcc('m', 'p', '4', 'v'), 10, Size(frame_width, frame_height));
+	int frames_per_second = cap.get(CAP_PROP_FPS);
+	VideoWriter video("C:\\Users\\q041\\OneDrive\\Desktop\\ippr-vids.mp4", VideoWriter::fourcc('m', 'p', '4', 'v'), frames_per_second, Size(frame_width, frame_height));
 
 	int frameCount = 0;
 	//Ptr<StaticSaliencyFineGrained> SS = StaticSaliencyFineGrained::create();
 
 	while (1) {
 		Mat frame;
+		Mat theOGframe;
+		Mat frame1;
+		Mat diff;
 		if (frameCount % 100 != 0 || frameCount < 4000) {
 			frameCount++;
 			video.write(frame);
 			continue;
 		}
 		cap >> frame;
-		if (frame.empty()) {
+		cap >> frame1;
+		theOGframe = frame;
+
+		if (frame.empty() || frame1.empty()) {
 			break;
 		}
+
+		cvtColor(frame, frame, COLOR_BGR2GRAY);
+		cvtColor(frame1, frame1, COLOR_BGR2GRAY);
+
 		//Ptr<StaticSaliencySpectralResidual> SS = StaticSaliencySpectralResidual::create();
-		Ptr<StaticSaliencyFineGrained> SS = StaticSaliencyFineGrained::create();
+		//Ptr<StaticSaliencyFineGrained> SS = StaticSaliencyFineGrained::create();
 
-		SS->computeSaliency(frame, salient);
-		salient.convertTo(salient, CV_8U, 255);
-		cvtColor(salient, salient, COLOR_GRAY2BGR);
-		kMeans = KMeans(salient, 3);
-		fastNlMeansDenoising(kMeans, denoised, 100, 7, 21); // was 35
+		Mat thresh;
+		Mat ret;
 
-		dilate(denoised, denoised, getStructuringElement(MORPH_RECT, Size(1, 10 * 2 + 1), Point(0, 20))); // was 10
-		Mat dilate = denoised;
-		imshow("dilate", dilate);
-		erode(denoised, denoised, getStructuringElement(MORPH_RECT, Size(5 * 2 + 1, 1), Point(10, 0))); // was 5
+		absdiff(frame1, frame, diff);
+		threshold(diff, thresh, 30, 255, THRESH_BINARY);
 
-		applySegmentation(denoised, frame);
-		imshow("a", denoised);
-		cout << "Working on frame: " << frameCount << endl;
-		frameCount++;
-		video.write(frame);
+		dilate(thresh, thresh, getStructuringElement(MORPH_CROSS, Size(1, 10 * 2 + 1), Point(0, 10))); // was 10
+		erode(thresh, thresh, getStructuringElement(MORPH_CROSS, Size(5 * 2 + 1, 1), Point(5, 0))); // was 5
+
+		imshow("dif", diff);
+		imshow("thresh", thresh);
+		//Mat thresh;
+		//Mat ret;
+
+		//threshold(diff, thresh, 30, 255, THRESH_BINARY);
+		//threshold(diff, ret, 30, 255, THRESH_BINARY);
+
+		//imshow("t", thresh);
+		//imshow("ret", ret);
+
+
+
+
+		//waitKey(0);
+		//return 0;
+
+		//SS->computeSaliency(frame, salient);
+		//salient.convertTo(salient, CV_8U, 255);
+		//cvtColor(salient, salient, COLOR_GRAY2BGR);
+		//kMeans = KMeans(salient, 3);
+		//fastNlMeansDenoising(kMeans, denoised, 100, 7, 21); // was 35
+
+		//dilate(denoised, denoised, getStructuringElement(MORPH_RECT, Size(1, 10 * 2 + 1), Point(0, 20))); // was 10
+		//Mat dilate = denoised;
+		//imshow("dilate", dilate);
+		//erode(denoised, denoised, getStructuringElement(MORPH_RECT, Size(5 * 2 + 1, 1), Point(10, 0))); // was 5
+
+		vector<Mat> objects = applySegmentation(thresh, theOGframe);
+		for (Mat object : objects) {
+			imshow("object", object);
+			classify(object);
+		}
+
+		rectangle(theOGframe, Point(10, 2), Point(100, 20), Scalar(255, 255, 255), -1);
+		stringstream ss;
+		ss << cap.get(CAP_PROP_POS_FRAMES);
+		string frameNumberString = ss.str();
+		//get the frame number and write it on the current frame
+		putText(theOGframe, frameNumberString.c_str(), Point(15, 15),
+			FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 0));
+		video.write(theOGframe);/*writing the frame into the output video*/
+		imshow("frame", theOGframe);/*show the output frame*/
+		waitKey(10);
+
+		//imshow("a", denoised);
+		//cout << "Working on frame: " << frameCount << endl;
+		//frameCount++;
+		//video.write(frame);
 
 		char c = (char)waitKey(1);
 		if (c == 27)
 			break;
+		if (frameCount == 24000) {
+			waitKey(0);
+			break;
+
+		}
 	}
 	cap.release();
 	video.release();
 	destroyAllWindows();
 	waitKey(0);
 	return 0;
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -207,28 +261,79 @@ vector<Mat> applySegmentation(Mat processed, Mat original) {
 	vector<Mat> separateImages;
 	threshold(processed, processed, 0, 255, THRESH_BINARY | THRESH_OTSU);
 	int erosion = 5;
-	erode(processed, processed, getStructuringElement(MORPH_RECT, Size(erosion*2+1, 1), Point(erosion, 0)));
+	erode(processed, processed, getStructuringElement(MORPH_RECT, Size(erosion * 2 + 1, 1), Point(erosion, 0)));
 	int dilation = 10;
 	dilate(processed, processed, getStructuringElement(MORPH_RECT, Size(1, dilation * 2 + 1), Point(0, dilation)));
-	findContours(processed, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE);
+	findContours(processed, contours, hierarchy, RETR_TREE, CHAIN_APPROX_NONE);
 	Mat drawing = Mat::zeros(processed.size(), CV_8UC3);
 	RNG rng(12345);
 	for (size_t i = 0; i < contours.size(); i++) {
 		Scalar scalar = Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256));
 		Rect rect = boundingRect(contours.at(i));
 		double wh = rect.width / rect.height;
-		/*if (rect.width < original.cols * 0.05
-			|| rect.height < original.rows * 0.1
-			|| rect.y < original.rows * 0.25
-			|| rect.x < original.cols * 0.3
-			|| wh > 3.0) {
-			continue;
-		}*/
-		//if (wh < 2) {
+		//if (rect.width < original.cols * 0.05
+		//	|| rect.height < original.rows * 0.1
+		//	|| rect.y < original.rows * 0.25
+		//	|| rect.x < original.cols * 0.3
+		//	|| wh > 3.0) {
 		//	continue;
 		//}
-		imshow(to_string(i), original(rect));
+		if (rect.width < 300 || rect.width > rect.height * 2.5) {
+			continue;
+		}
+		//imshow(to_string(i), original(rect));
+		cout << i << ": " << wh << " " << rect.width << " " << rect.height << " " << rect.x << " " << rect.y << endl;
 		separateImages.push_back(original(rect));
 	}
 	return separateImages;
+}
+
+
+void classify(Mat object)
+{
+	/*read the file path*/
+	string ModelFile = "bvlc_googlenet.caffemodel";
+	String ConfigFile = "bvlc_googlenet.prototxt";
+	String ClassifyFile = "classification_classes_ILSVRC2012.txt";
+	/*read the networking layor*/
+	Net net = readNet(ModelFile, ConfigFile);
+
+	if (net.empty())
+	{
+		cout << "\nERORR: There is no layer in the network" << endl;
+	}
+	/*read the classify tex file*/
+	fstream fs(ClassifyFile.c_str(), fstream::in);
+	if (!fs.is_open())
+	{
+		cout << "\nERORR: Cannot load the class names\n";
+
+	}
+	/*create classes vector to store the lines*/
+	vector<string> classes;
+	string line;
+	while (getline(fs, line))
+	{
+		classes.push_back(line);
+	}
+	fs.close();
+	Mat blob = blobFromImage(object, 1, Size(224, 224), Scalar(104, 117, 123));
+	if (blob.empty())
+		cout << "\nERORR: Cannot create blob\n";
+	net.setInput(blob);
+	Mat prob = net.forward();
+	// Determine the best four classes
+	Mat sorted_idx;
+	sortIdx(prob, sorted_idx, SORT_EVERY_ROW + SORT_DESCENDING);
+	for (int i = 0; i < 4; ++i) {
+		cout << classes[sorted_idx.at<int>(i)] << "\n - ";
+		cout << "\n Probability: " << prob.at<float>(sorted_idx.at<int>(i)) << endl;
+	}
+	cout << "\nBest Probability: " << classes[sorted_idx.at<int>(0)] << "\n - ";
+	//Draw a rectangle displaying the bounding box
+	rectangle(object, Point(0, 100), Point(100, 10), Scalar(0, 0, 255));
+	//draw rectangle above the vehicle
+	rectangle(object, Point(0, 2), Point(200, 20), Scalar(255, 255, 255), -1);
+	putText(object, classes[sorted_idx.at<int>(0)], cvPoint(0, 15), FONT_HERSHEY_SIMPLEX,
+		0.5, cvScalar(0, 0, 255), 1);
 }
