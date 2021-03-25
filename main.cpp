@@ -9,10 +9,6 @@
 #include "opencv2/dnn/dnn.hpp"
 #include <string>
 #include <fstream>
-#include <opencv2/imgproc.hpp>
-#include <opencv2/videoio.hpp>
-#include "opencv2/bgsegm.hpp"
-#include <opencv2/saliency/saliencySpecializedClasses.hpp>
 #include <core\types_c.h>
 
 using namespace std;
@@ -31,176 +27,141 @@ void classify(Mat object);
 
 int main()
 {
-	VideoCapture cap;
-	cap.open(pathToVid);
 
-	if (!cap.isOpened()) {
-
-		cout << "Problem with opening video!" << endl;
-		return -1;
-	}
-
-	//Mat frame;
-	Mat salient;
-	Mat kMeans;
-	Mat denoised;
-
-	int frame_width = cap.get(CAP_PROP_FRAME_WIDTH);
-	int frame_height = cap.get(CAP_PROP_FRAME_HEIGHT);
-	int frames_per_second = cap.get(CAP_PROP_FPS);
-	VideoWriter video("C:\\Users\\q041\\OneDrive\\Desktop\\ippr-vids.mp4", VideoWriter::fourcc('m', 'p', '4', 'v'), frames_per_second, Size(frame_width, frame_height));
-
-	int frameCount = 0;
-	//Ptr<StaticSaliencyFineGrained> SS = StaticSaliencyFineGrained::create();
-
-	while (1) {
-		Mat frame;
-		Mat theOGframe;
-		Mat frame1;
-		Mat diff;
-		if (frameCount % 100 != 0 || frameCount < 4000) {
-			frameCount++;
-			video.write(frame);
-			continue;
+		VideoCapture cap;
+		cap.open(pathToVid);
+	
+		if (!cap.isOpened()) {
+			cout << "Problem with opening video!" << endl;
+			return -1;
 		}
-		cap >> frame;
-		cap >> frame1;
-		theOGframe = frame;
-
-		if (frame.empty() || frame1.empty()) {
-			break;
-		}
-
-		cvtColor(frame, frame, COLOR_BGR2GRAY);
-		cvtColor(frame1, frame1, COLOR_BGR2GRAY);
-
-		//Ptr<StaticSaliencySpectralResidual> SS = StaticSaliencySpectralResidual::create();
+	
+		//Mat frame;
+		Mat salient;
+		Mat kMeans;
+		Mat denoised;
+	
+		int frame_width = cap.get(CAP_PROP_FRAME_WIDTH);
+		int frame_height = cap.get(CAP_PROP_FRAME_HEIGHT);
+		VideoWriter video("C:\\Users\\salma\\Videos\\ProcessedVideo.mp4", VideoWriter::fourcc('m', 'p', '4', 'v'), 10, Size(frame_width, frame_height));
+	
+		int frameCount = 0;
 		//Ptr<StaticSaliencyFineGrained> SS = StaticSaliencyFineGrained::create();
+	
+		while (1) {
+			Mat frame;
+			Mat frame1;
+			Mat diff;
+			if (frameCount % 100 != 0 || frameCount < 4000) {
+				frameCount++;
+				video.write(frame);
+				continue;
+			}
+			cap >> frame;
+			cap >> frame1;
+			cvtColor(frame, frame, COLOR_BGR2GRAY);
+			cvtColor(frame1, frame1, COLOR_BGR2GRAY);
+	
+			if (frame.empty()) {
+				break;
+			}
+			Ptr<StaticSaliencySpectralResidual> SS = StaticSaliencySpectralResidual::create();
+			//Ptr<StaticSaliencyFineGrained> SS = StaticSaliencyFineGrained::create();
+	
 
-		Mat thresh;
-		Mat ret;
-
-		absdiff(frame1, frame, diff);
-		threshold(diff, thresh, 30, 255, THRESH_BINARY);
-
-		dilate(thresh, thresh, getStructuringElement(MORPH_CROSS, Size(1, 10 * 2 + 1), Point(0, 10))); // was 10
-		erode(thresh, thresh, getStructuringElement(MORPH_CROSS, Size(5 * 2 + 1, 1), Point(5, 0))); // was 5
-
-		imshow("dif", diff);
-		imshow("thresh", thresh);
-		//Mat thresh;
-		//Mat ret;
-
-		//threshold(diff, thresh, 30, 255, THRESH_BINARY);
-		//threshold(diff, ret, 30, 255, THRESH_BINARY);
-
-		//imshow("t", thresh);
-		//imshow("ret", ret);
 
 
+			SS->computeSaliency(frame, salient);
+			salient.convertTo(salient, CV_8U, 255);
+
+			cvtColor(salient, salient, COLOR_GRAY2BGR);
+
+			imshow("Original", frame);
+
+			kMeans = KMeans(salient, 3);
+
+			imshow("KMeans", kMeans);
+			fastNlMeansDenoising(kMeans, denoised, 40, 7, 21);
+
+			dilate(denoised, denoised, getStructuringElement(MORPH_RECT, Size(1, 10 * 2 + 1), Point(0, 10)));
+			Mat dilate = denoised;
+			imshow("dilate", dilate);
+			erode(denoised, denoised, getStructuringElement(MORPH_RECT, Size(5 * 2 + 1, 1), Point(5, 0)));
+
+			imshow("Denoised", denoised);
+			vector<Mat> objects = applySegmentation(denoised, frame);
+			for (Mat object : objects) {
+				imshow("object", object);
+				classify(object);
+			}
+
+			rectangle(frame, Point(10, 2), Point(100, 20), Scalar(255, 255, 255), -1);
+			stringstream ss;
+			ss << cap.get(CAP_PROP_POS_FRAMES);
+			string frameNumberString = ss.str();
+			//get the frame number and write it on the current frame
+			putText(frame, frameNumberString.c_str(), Point(15, 15),
+				FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 0));
+			video.write(frame);/*writing the frame into the output video*/
+			imshow("frame", frame);/*show the output frame*/
+			waitKey(10);
 
 
-		//waitKey(0);
-		//return 0;
 
-		//SS->computeSaliency(frame, salient);
-		//salient.convertTo(salient, CV_8U, 255);
-		//cvtColor(salient, salient, COLOR_GRAY2BGR);
-		//kMeans = KMeans(salient, 3);
-		//fastNlMeansDenoising(kMeans, denoised, 100, 7, 21); // was 35
 
-		//dilate(denoised, denoised, getStructuringElement(MORPH_RECT, Size(1, 10 * 2 + 1), Point(0, 20))); // was 10
-		//Mat dilate = denoised;
-		//imshow("dilate", dilate);
-		//erode(denoised, denoised, getStructuringElement(MORPH_RECT, Size(5 * 2 + 1, 1), Point(10, 0))); // was 5
 
-		vector<Mat> objects = applySegmentation(thresh, theOGframe);
-		for (Mat object : objects) {
-			imshow("object", object);
-			classify(object);
+
+
+
+
+
+			//Mat thresh;
+			//Mat ret;
+	
+			//threshold(diff, thresh, 30, 255, THRESH_BINARY);
+			//threshold(diff, ret, 30, 255, THRESH_BINARY);
+	
+			//imshow("t", thresh);
+			//imshow("ret", ret);
+	
+	
+	
+	
+			//waitKey(0);
+			//return 0;
+	
+			//SS->computeSaliency(frame, salient);
+			//salient.convertTo(salient, CV_8U, 255);
+			//cvtColor(salient, salient, COLOR_GRAY2BGR);
+			//kMeans = KMeans(salient, 3);
+			//fastNlMeansDenoising(kMeans, denoised, 100, 7, 21); // was 35
+	
+			//dilate(denoised, denoised, getStructuringElement(MORPH_RECT, Size(1, 10 * 2 + 1), Point(0, 20))); // was 10
+			//Mat dilate = denoised;
+			//imshow("dilate", dilate);
+			//erode(denoised, denoised, getStructuringElement(MORPH_RECT, Size(5 * 2 + 1, 1), Point(10, 0))); // was 5
+	
+			///////applySegmentation(thresh, frame);
+			//imshow("a", denoised);
+			//frameCount++;
+			//video.write(frame);
+	
+			char c = (char)waitKey(1);
+			if (c == 27)
+				break;
+			if (frameCount == 24000) {
+				waitKey(0);
+				break;
+	
+			}
 		}
 
-		rectangle(theOGframe, Point(10, 2), Point(100, 20), Scalar(255, 255, 255), -1);
-		stringstream ss;
-		ss << cap.get(CAP_PROP_POS_FRAMES);
-		string frameNumberString = ss.str();
-		//get the frame number and write it on the current frame
-		putText(theOGframe, frameNumberString.c_str(), Point(15, 15),
-			FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 0));
-		video.write(theOGframe);/*writing the frame into the output video*/
-		imshow("frame", theOGframe);/*show the output frame*/
-		waitKey(10);
-
-		//imshow("a", denoised);
-		//cout << "Working on frame: " << frameCount << endl;
-		//frameCount++;
-		//video.write(frame);
-
-		char c = (char)waitKey(1);
-		if (c == 27)
-			break;
-		if (frameCount == 24000) {
-			waitKey(0);
-			break;
-
-		}
-	}
-	cap.release();
-	video.release();
-	destroyAllWindows();
-	waitKey(0);
-	return 0;
 
 
 
 
 
 
-
-
-
-
-
-
-
-	//Mat original = imread(path);
-	//Mat salient;
-	//Mat kMeans;
-	//Mat denoised;
-
-	////Ptr<StaticSaliencyFineGrained> SS = StaticSaliencyFineGrained::create();
-	//Ptr<StaticSaliencySpectralResidual> SS = StaticSaliencySpectralResidual::create();
-	//SS->computeSaliency(original, salient);
-	//imshow("salient", salient);
-	//salient.convertTo(salient, CV_8U, 255);
-
-	//cvtColor(salient, salient, COLOR_GRAY2BGR);
-
-	//imshow("Original", original);
-
-	///*
-	//Mat image_grayscale = salient.clone();
-	//cvtColor(image_grayscale, image_grayscale, COLOR_BGR2GRAY);
-	//threshold(image_grayscale, image_grayscale, 0, 255, THRESH_BINARY | THRESH_OTSU);
-	//imshow("Thresh", image_grayscale);
-	//*/
-
-	//kMeans = KMeans(salient, 3);
-
-	//imshow("KMeans", kMeans);
-	//fastNlMeansDenoising(kMeans, denoised, 35, 7, 21);
-
-	//dilate(denoised, denoised, getStructuringElement(MORPH_RECT, Size(1, 10 * 2 + 1), Point(0, 10)));
-	//Mat dilate = denoised;
-	//imshow("dilate", dilate);
-	//erode(denoised, denoised, getStructuringElement(MORPH_RECT, Size(5 * 2 + 1, 1), Point(5, 0)));
-
-	//imshow("Denoised", denoised);
-
-	//applySegmentation(denoised, original);
-
-	//waitKey(0);
-	//return 0;
 }
 
 
@@ -271,23 +232,25 @@ vector<Mat> applySegmentation(Mat processed, Mat original) {
 		Scalar scalar = Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256));
 		Rect rect = boundingRect(contours.at(i));
 		double wh = rect.width / rect.height;
-		//if (rect.width < original.cols * 0.05
-		//	|| rect.height < original.rows * 0.1
-		//	|| rect.y < original.rows * 0.25
-		//	|| rect.x < original.cols * 0.3
-		//	|| wh > 3.0) {
+		/*if (rect.width < original.cols * 0.05
+			|| rect.height < original.rows * 0.1
+			|| rect.y < original.rows * 0.25
+			|| rect.x < original.cols * 0.3
+			|| wh > 3.0) {
+			continue;
+		}*/
+		//if (rect.width < 300 || rect.width > rect.height * 2.5) {
 		//	continue;
 		//}
 		if (rect.width < 300 || rect.width > rect.height * 2.5) {
 			continue;
 		}
-		//imshow(to_string(i), original(rect));
+		imshow(to_string(i), original(rect));
 		cout << i << ": " << wh << " " << rect.width << " " << rect.height << " " << rect.x << " " << rect.y << endl;
 		separateImages.push_back(original(rect));
 	}
 	return separateImages;
 }
-
 
 void classify(Mat object)
 {
