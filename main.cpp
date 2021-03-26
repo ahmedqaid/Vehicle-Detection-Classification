@@ -59,6 +59,7 @@ int main()
 			}
 			cap >> frame;
 			cap >> frame1;
+			Mat theOGImage = frame;
 			cvtColor(frame, frame, COLOR_BGR2GRAY);
 			cvtColor(frame1, frame1, COLOR_BGR2GRAY);
 	
@@ -89,7 +90,7 @@ int main()
 			erode(denoised, denoised, getStructuringElement(MORPH_RECT, Size(5 * 2 + 1, 1), Point(5, 0)));
 
 			imshow("Denoised", denoised);
-			vector<Mat> objects = applySegmentation(denoised, frame);
+			vector<Mat> objects = applySegmentation(denoised, theOGImage);
 			for (Mat object : objects) {
 				imshow("object", object);
 				classify(object);
