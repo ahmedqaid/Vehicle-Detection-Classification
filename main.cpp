@@ -19,150 +19,102 @@ using namespace cv;
 using namespace dnn;
 
 const string path = "C:\\Users\\q041\\OneDrive\\Desktop\\Screenshot.png";
-const string pathToVid = "C:\\Users\\q041\\OneDrive\\Desktop\\ippr-vid1.mp4";
+const string pathToVid = "C:\\Users\\q041\\OneDrive\\Desktop\\ippr-vid2.mp4";
 
 Mat KMeans(Mat original, int clusters);
 vector<Mat> applySegmentation(Mat processed, Mat original);
-void classify(Mat object);
+string classify(Mat object);
+
+int frameCount = 0;
+int carCount = 0;
+int busCount = 0;
+int truckCount = 0;
+int bikeCount = 0;
+int unknown = 0;
 
 int main()
 {
+	VideoCapture cap;
+	cap.open(pathToVid);
 
-		VideoCapture cap;
-		cap.open(pathToVid);
-	
-		if (!cap.isOpened()) {
-			cout << "Problem with opening video!" << endl;
-			return -1;
+	if (!cap.isOpened()) {
+		cout << "Problem with opening video!" << endl;
+		return -1;
+	}
+
+	Mat salient;
+	Mat kMeans;
+	Mat denoised;
+
+	int frame_width = cap.get(CAP_PROP_FRAME_WIDTH);
+	int frame_height = cap.get(CAP_PROP_FRAME_HEIGHT);
+	int frames_per_second = cap.get(CAP_PROP_FPS);
+	VideoWriter video("C:\\Users\\q041\\OneDrive\\Desktop\\ippr-vids.mp4", VideoWriter::fourcc('m', 'p', '4', 'v'), frames_per_second, Size(frame_width, frame_height));
+
+	int frameCount = 0;
+
+	while (1) {
+		frameCount++;
+		Mat frame;
+		//if (frameCount % 100 != 0 || frameCount < 4000) {
+		//	frameCount++;
+		//	video.write(frame);
+		//	continue;
+		//}
+		cap >> frame;
+		Mat theOGImage = frame;
+		cvtColor(frame, frame, COLOR_BGR2GRAY);
+		
+		if (frame.empty()) {
+			break;
 		}
-	
-		//Mat frame;
-		Mat salient;
-		Mat kMeans;
-		Mat denoised;
-	
-		int frame_width = cap.get(CAP_PROP_FRAME_WIDTH);
-		int frame_height = cap.get(CAP_PROP_FRAME_HEIGHT);
-		VideoWriter video("C:\\Users\\salma\\Videos\\ProcessedVideo.mp4", VideoWriter::fourcc('m', 'p', '4', 'v'), 10, Size(frame_width, frame_height));
-	
-		int frameCount = 0;
+		Ptr<StaticSaliencySpectralResidual> SS = StaticSaliencySpectralResidual::create();
 		//Ptr<StaticSaliencyFineGrained> SS = StaticSaliencyFineGrained::create();
-	
-		while (1) {
-			Mat frame;
-			Mat frame1;
-			Mat diff;
-			if (frameCount % 100 != 0 || frameCount < 4000) {
-				frameCount++;
-				video.write(frame);
-				continue;
-			}
-			cap >> frame;
-			cap >> frame1;
-			Mat theOGImage = frame;
-			cvtColor(frame, frame, COLOR_BGR2GRAY);
-			cvtColor(frame1, frame1, COLOR_BGR2GRAY);
-	
-			if (frame.empty()) {
-				break;
-			}
-			Ptr<StaticSaliencySpectralResidual> SS = StaticSaliencySpectralResidual::create();
-			//Ptr<StaticSaliencyFineGrained> SS = StaticSaliencyFineGrained::create();
-	
 
+		SS->computeSaliency(frame, salient);
+		salient.convertTo(salient, CV_8U, 255);
+		imshow("salient", salient);
 
+		cvtColor(salient, salient, COLOR_GRAY2BGR);
 
-			SS->computeSaliency(frame, salient);
-			salient.convertTo(salient, CV_8U, 255);
+		imshow("Original", frame);
 
-			cvtColor(salient, salient, COLOR_GRAY2BGR);
+		kMeans = KMeans(salient, 3);
 
-			imshow("Original", frame);
+		imshow("KMeans", kMeans);
 
-			kMeans = KMeans(salient, 3);
+		fastNlMeansDenoising(kMeans, denoised, 40, 7, 21);
+		dilate(denoised, denoised, getStructuringElement(MORPH_RECT, Size(1, 10 * 2 + 1), Point(0, 10)));
+		Mat dilate = denoised;
+		imshow("dilate", dilate);
+		erode(denoised, denoised, getStructuringElement(MORPH_RECT, Size(5 * 2 + 1, 1), Point(5, 0)));
 
-			imshow("KMeans", kMeans);
-			fastNlMeansDenoising(kMeans, denoised, 40, 7, 21);
-
-			dilate(denoised, denoised, getStructuringElement(MORPH_RECT, Size(1, 10 * 2 + 1), Point(0, 10)));
-			Mat dilate = denoised;
-			imshow("dilate", dilate);
-			erode(denoised, denoised, getStructuringElement(MORPH_RECT, Size(5 * 2 + 1, 1), Point(5, 0)));
-
-			imshow("Denoised", denoised);
-			vector<Mat> objects = applySegmentation(denoised, theOGImage);
-			for (Mat object : objects) {
-				imshow("object", object);
-				classify(object);
-			}
-
-			rectangle(frame, Point(10, 2), Point(100, 20), Scalar(255, 255, 255), -1);
-			stringstream ss;
-			ss << cap.get(CAP_PROP_POS_FRAMES);
-			string frameNumberString = ss.str();
-			//get the frame number and write it on the current frame
-			putText(frame, frameNumberString.c_str(), Point(15, 15),
-				FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 0));
-			video.write(frame);/*writing the frame into the output video*/
-			imshow("frame", frame);/*show the output frame*/
-			waitKey(10);
-
-
-
-
-
-
-
-
-
-
-			//Mat thresh;
-			//Mat ret;
-	
-			//threshold(diff, thresh, 30, 255, THRESH_BINARY);
-			//threshold(diff, ret, 30, 255, THRESH_BINARY);
-	
-			//imshow("t", thresh);
-			//imshow("ret", ret);
-	
-	
-	
-	
-			//waitKey(0);
-			//return 0;
-	
-			//SS->computeSaliency(frame, salient);
-			//salient.convertTo(salient, CV_8U, 255);
-			//cvtColor(salient, salient, COLOR_GRAY2BGR);
-			//kMeans = KMeans(salient, 3);
-			//fastNlMeansDenoising(kMeans, denoised, 100, 7, 21); // was 35
-	
-			//dilate(denoised, denoised, getStructuringElement(MORPH_RECT, Size(1, 10 * 2 + 1), Point(0, 20))); // was 10
-			//Mat dilate = denoised;
-			//imshow("dilate", dilate);
-			//erode(denoised, denoised, getStructuringElement(MORPH_RECT, Size(5 * 2 + 1, 1), Point(10, 0))); // was 5
-	
-			///////applySegmentation(thresh, frame);
-			//imshow("a", denoised);
-			//frameCount++;
-			//video.write(frame);
-	
-			char c = (char)waitKey(1);
-			if (c == 27)
-				break;
-			if (frameCount == 24000) {
-				waitKey(0);
-				break;
-	
-			}
+		imshow("Denoised", denoised);
+		vector<Mat> objects = applySegmentation(denoised, theOGImage);
+		for (Mat object : objects) {
+			imshow("object", object);
+			classify(object);
 		}
 
+		rectangle(theOGImage, Point(10, 2), Point(100, 20), Scalar(255, 255, 255), -1);
+		stringstream ss;
+		ss << cap.get(CAP_PROP_POS_FRAMES);
+		string frameNumberString = ss.str();
+		putText(theOGImage, frameNumberString.c_str(), Point(15, 15),
+			FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 0));
+		video.write(theOGImage);
+		imshow("frame", theOGImage);
+		waitKey();
 
+		char c = (char)waitKey(1);
+		if (c == 27)
+			break;
+		if (frameCount == 24000) {
+			waitKey(0);
+			break;
 
-
-
-
-
+		}
+	}
 }
 
 
@@ -211,10 +163,8 @@ Mat KMeans(Mat original, int clusters) {
 				output.at<Vec3b>(i, j)[2] = centers.at<float>(cluster_idj, 2);
 			}
 		}
-	// convert back from BGR to grai color mode /
 	cvtColor(output, output, COLOR_BGR2GRAY);
 	return output;
-	// return the output image to be used for the nejt section /
 }
 
 vector<Mat> applySegmentation(Mat processed, Mat original) {
@@ -233,16 +183,6 @@ vector<Mat> applySegmentation(Mat processed, Mat original) {
 		Scalar scalar = Scalar(rng.uniform(0, 256), rng.uniform(0, 256), rng.uniform(0, 256));
 		Rect rect = boundingRect(contours.at(i));
 		double wh = rect.width / rect.height;
-		/*if (rect.width < original.cols * 0.05
-			|| rect.height < original.rows * 0.1
-			|| rect.y < original.rows * 0.25
-			|| rect.x < original.cols * 0.3
-			|| wh > 3.0) {
-			continue;
-		}*/
-		//if (rect.width < 300 || rect.width > rect.height * 2.5) {
-		//	continue;
-		//}
 		if (rect.width < 300 || rect.width > rect.height * 2.5) {
 			continue;
 		}
@@ -253,51 +193,44 @@ vector<Mat> applySegmentation(Mat processed, Mat original) {
 	return separateImages;
 }
 
-void classify(Mat object)
+string classify(Mat object)
 {
-	/*read the file path*/
-	string ModelFile = "bvlc_googlenet.caffemodel";
-	String ConfigFile = "bvlc_googlenet.prototxt";
-	String ClassifyFile = "classification_classes_ILSVRC2012.txt";
-	/*read the networking layor*/
-	Net net = readNet(ModelFile, ConfigFile);
+	String model = "bvlc_googlenet.caffemodel";
+	String config = "bvlc_googlenet.prototxt";
+	String classify = "classification_classes_ILSVRC2012.txt";
 
-	if (net.empty())
-	{
-		cout << "\nERORR: There is no layer in the network" << endl;
+	Net net = readNet(model, config);
+	if (net.empty()) {
+		cout << "Error: Empty file!" << endl;
 	}
-	/*read the classify tex file*/
-	fstream fs(ClassifyFile.c_str(), fstream::in);
-	if (!fs.is_open())
-	{
-		cout << "\nERORR: Cannot load the class names\n";
-
+	fstream fs(classify.c_str(), fstream::in);
+	if (!fs.is_open()) {
+		cout << "Error: Classification not available" << endl;
 	}
-	/*create classes vector to store the lines*/
-	vector<string> classes;
+	
+	vector<string> classifiedObjects;
 	string line;
-	while (getline(fs, line))
-	{
-		classes.push_back(line);
+	while (getline(fs, line)) {
+		classifiedObjects.push_back(line);
 	}
 	fs.close();
-	Mat blob = blobFromImage(object, 1, Size(224, 224), Scalar(104, 117, 123));
-	if (blob.empty())
-		cout << "\nERORR: Cannot create blob\n";
-	net.setInput(blob);
-	Mat prob = net.forward();
-	// Determine the best four classes
+	Mat blobFromImg = blobFromImage(object, 1, Size(224, 224), Scalar(104, 117, 123));
+	if (blobFromImg.empty())
+		cout << "Error: Blob is not available" << endl;
+	net.setInput(blobFromImg);
+	Mat probabilities = net.forward();
+
 	Mat sorted_idx;
-	sortIdx(prob, sorted_idx, SORT_EVERY_ROW + SORT_DESCENDING);
+	sortIdx(probabilities, sorted_idx, SORT_EVERY_ROW + SORT_DESCENDING);
 	for (int i = 0; i < 4; ++i) {
-		cout << classes[sorted_idx.at<int>(i)] << "\n - ";
-		cout << "\n Probability: " << prob.at<float>(sorted_idx.at<int>(i)) << endl;
+		//cout << classifiedObjects[sorted_idx.at<int>(i)] << endl;
+		//cout << "\n Classified: " << probabilities.at<float>(sorted_idx.at<int>(i)) << endl;
 	}
-	cout << "\nBest Probability: " << classes[sorted_idx.at<int>(0)] << "\n - ";
-	//Draw a rectangle displaying the bounding box
-	rectangle(object, Point(0, 100), Point(100, 10), Scalar(0, 0, 255));
-	//draw rectangle above the vehicle
+	//cout << "Best result: " << classifiedObjects[sorted_idx.at<int>(0)] << endl;
+	//objs.push_back(classifiedObjects[sorted_idx.at<int>(0)]);
+
+	rectangle(object, Point(0, 200), Point(200, 0), Scalar(0, 255, 0));
 	rectangle(object, Point(0, 2), Point(200, 20), Scalar(255, 255, 255), -1);
-	putText(object, classes[sorted_idx.at<int>(0)], cvPoint(0, 15), FONT_HERSHEY_SIMPLEX,
-		0.5, cvScalar(0, 0, 255), 1);
+	putText(object, classifiedObjects[sorted_idx.at<int>(0)], cvPoint(0, 15), FONT_HERSHEY_TRIPLEX, 0.5, cvScalar(0, 0, 0), 1);
+	return classifiedObjects[sorted_idx.at<int>(0)];
 }
