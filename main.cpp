@@ -9,6 +9,9 @@
 #include "opencv2/dnn/dnn.hpp"
 #include <string>
 #include <fstream>
+#include <opencv2/imgproc.hpp>
+#include "opencv2/bgsegm.hpp"
+#include <opencv2/saliency/saliencySpecializedClasses.hpp>
 #include <core\types_c.h>
 
 using namespace std;
@@ -19,9 +22,8 @@ using namespace cv;
 using namespace dnn;
 
 const string path = "C:\\Users\\q041\\OneDrive\\Desktop\\Screenshot.png";
-const string pathToVid = "C:\\Users\\q041\\OneDrive\\Desktop\\ippr-vid2.mp4";
-
-Mat KMeans(Mat original, int clusters);
+const string pathToVid = "C:\\Users\\q041\\OneDrive\\Desktop\\ippr-vid1.mp4";
+vector<string> objs;
 vector<Mat> applySegmentation(Mat processed, Mat original);
 string classify(Mat object);
 
@@ -42,8 +44,6 @@ int main()
 		return -1;
 	}
 
-	Mat salient;
-	Mat kMeans;
 	Mat denoised;
 
 	int frame_width = cap.get(CAP_PROP_FRAME_WIDTH);
@@ -56,115 +56,87 @@ int main()
 	while (1) {
 		frameCount++;
 		Mat frame;
-		//if (frameCount % 100 != 0 || frameCount < 4000) {
-		//	frameCount++;
-		//	video.write(frame);
-		//	continue;
-		//}
+		Mat theOGframe;
+		Mat frame1;
+		Mat diff;
+
 		cap >> frame;
-		Mat theOGImage = frame;
-		cvtColor(frame, frame, COLOR_BGR2GRAY);
-		
-		if (frame.empty()) {
+		cap >> frame1;
+		theOGframe = frame;
+		if (frame.empty() || frame1.empty()) {
 			break;
 		}
-		Ptr<StaticSaliencySpectralResidual> SS = StaticSaliencySpectralResidual::create();
-		//Ptr<StaticSaliencyFineGrained> SS = StaticSaliencyFineGrained::create();
 
-		SS->computeSaliency(frame, salient);
-		salient.convertTo(salient, CV_8U, 255);
-		imshow("salient", salient);
+		cvtColor(frame, frame, COLOR_BGR2GRAY);
+		cvtColor(frame1, frame1, COLOR_BGR2GRAY);
 
-		cvtColor(salient, salient, COLOR_GRAY2BGR);
+		Mat thresh;
+		Mat ret;
 
-		imshow("Original", frame);
+		absdiff(frame1, frame, diff);
+		medianBlur(frame, frame, 3);
+		medianBlur(frame1, frame1, 3);
+		threshold(diff, thresh, 30, 255, THRESH_BINARY);
 
-		kMeans = KMeans(salient, 3);
+		dilate(thresh, thresh, getStructuringElement(MORPH_CROSS, Size(1, 10 * 2 + 1), Point(0, 10)));
+		erode(thresh, thresh, getStructuringElement(MORPH_CROSS, Size(5 * 2 + 1, 1), Point(5, 0)));
 
-		imshow("KMeans", kMeans);
-
-		fastNlMeansDenoising(kMeans, denoised, 40, 7, 21);
-		dilate(denoised, denoised, getStructuringElement(MORPH_RECT, Size(1, 10 * 2 + 1), Point(0, 10)));
-		Mat dilate = denoised;
-		imshow("dilate", dilate);
-		erode(denoised, denoised, getStructuringElement(MORPH_RECT, Size(5 * 2 + 1, 1), Point(5, 0)));
-
-		imshow("Denoised", denoised);
-		vector<Mat> objects = applySegmentation(denoised, theOGImage);
+		imshow("dif", diff);
+		imshow("thresh", thresh);
+		
+		vector<Mat> objects = applySegmentation(thresh, theOGframe);
 		for (Mat object : objects) {
-			imshow("object", object);
-			classify(object);
+			//imshow("object", object);
+			string classified = classify(object);
+			if (classify(object).find("moving van") != std::string::npos) {
+				truckCount++;
+			}
+			else if (classified.find("car") != std::string::npos
+				|| classified.find("police") != std::string::npos
+				|| classified.find("taxi") != std::string::npos
+				|| classified.find("van") != std::string::npos
+				|| classified.find("model") != std::string::npos) {
+				carCount++;
+			}
+			else if (classified.find("bus") != std::string::npos) {
+				busCount++;
+			}
+			else if (classified.find("truck") != std::string::npos) {
+				truckCount++;
+			}
+			else if (classified.find("bike") != std::string::npos
+				|| classified.find("tri") != std::string::npos
+				|| classified.find("ricksh") != std::string::npos
+				|| classified.find("helmet") != std::string::npos) {
+				bikeCount++;
+			}
+			else {
+				unknown++;
+			}
 		}
 
-		rectangle(theOGImage, Point(10, 2), Point(100, 20), Scalar(255, 255, 255), -1);
+		rectangle(theOGframe, Point(10, 2), Point(100, 20), Scalar(255, 255, 255), -1);
 		stringstream ss;
 		ss << cap.get(CAP_PROP_POS_FRAMES);
 		string frameNumberString = ss.str();
-		putText(theOGImage, frameNumberString.c_str(), Point(15, 15),
+		putText(theOGframe, frameNumberString.c_str(), Point(15, 15),
 			FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0, 0, 0));
-		video.write(theOGImage);
-		imshow("frame", theOGImage);
+		video.write(theOGframe);
+		imshow("frame", theOGframe);
+
+		cout << "Car Count: " << carCount << endl;
+		cout << "Truck Count: " << truckCount << endl;
+		cout << "Bike Count: " << bikeCount << endl;
+		cout << "Bus Count: " << busCount << endl;
+		cout << "Unknown Count: " << unknown << endl;
+
 		waitKey();
-
-		char c = (char)waitKey(1);
-		if (c == 27)
-			break;
-		if (frameCount == 24000) {
-			waitKey(0);
-			break;
-
-		}
 	}
-}
-
-
-Mat KMeans(Mat original, int clusters) {
-	int attempts;
-	Mat labels;
-	Mat centers;
-	Mat samples(original.rows * original.cols, clusters, CV_32F);
-	for (int i = 0; i < original.rows; i++)
-	{
-		for (int j = 0; j < original.cols; j++)
-		{
-			for (int k = 0; k < clusters; k++)
-			{
-				samples.at<float>(i + j * original.rows, k) = original.at<Vec3b>(i, j)[k];
-			}
-		}
-	}
-
-	attempts = 5;
-	kmeans(samples, clusters, labels, TermCriteria(TermCriteria::MAX_ITER | TermCriteria::EPS, 20, 1.0), attempts, KMEANS_PP_CENTERS, centers);
-
-	Mat output = Mat::zeros(original.size(), original.type());
-	Vec2i pointVal = { 0, 0 };
-
-	for (int i = 0; i < centers.rows; i++)
-	{
-		int sum = 0;
-		for (int j = 0; j < centers.cols; j++)
-		{
-			sum += centers.at<float>(i, j);
-		}
-		if (sum / 3 > pointVal[1]) {
-			pointVal[0] = i;
-			pointVal[1] = sum / 3;
-		}
-	}
-
-	for (int i = 0; i < original.rows; i++)
-		for (int j = 0; j < original.cols; j++)
-		{
-			int cluster_idj = labels.at<int>(i + j * original.rows, 0);
-			if (cluster_idj == pointVal[0]) {
-				output.at<Vec3b>(i, j)[0] = centers.at<float>(cluster_idj, 0);
-				output.at<Vec3b>(i, j)[1] = centers.at<float>(cluster_idj, 1);
-				output.at<Vec3b>(i, j)[2] = centers.at<float>(cluster_idj, 2);
-			}
-		}
-	cvtColor(output, output, COLOR_BGR2GRAY);
-	return output;
+	cap.release();
+	video.release();
+	destroyAllWindows();
+	waitKey(0);
+	return 0;
 }
 
 vector<Mat> applySegmentation(Mat processed, Mat original) {
@@ -186,8 +158,8 @@ vector<Mat> applySegmentation(Mat processed, Mat original) {
 		if (rect.width < 300 || rect.width > rect.height * 2.5) {
 			continue;
 		}
-		imshow(to_string(i), original(rect));
-		cout << i << ": " << wh << " " << rect.width << " " << rect.height << " " << rect.x << " " << rect.y << endl;
+		//imshow(to_string(i), original(rect));
+		//cout << i << ": " << wh << " " << rect.width << " " << rect.height << " " << rect.x << " " << rect.y << endl;
 		separateImages.push_back(original(rect));
 	}
 	return separateImages;
